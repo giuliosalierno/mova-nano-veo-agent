@@ -1,7 +1,7 @@
 # Mova Nano Veo Agent
 
 **Python Version:** 3.12
-**Author:** Your Name
+**Author:** Giulio Salierno, Lorenzo Spataro
 
 An AI agent that creates animated videos from text prompts in a simple, two-step process.
 
