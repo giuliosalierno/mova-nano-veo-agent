@@ -8,9 +8,14 @@ An AI agent that creates animated videos from text prompts in a simple, two-step
 ## How It Works
 
 Mova is an AI assistant that orchestrates two specialized agents to bring your ideas to life:
+## How It Works
+
 
 1.  **Nano Agent:** This agent creates a still image frame based on your description.
 2.  **Veo Agent:** This agent takes the generated frame and animates it according to your instructions.
+
+![System Overview](img/img.png)
+
 
 The workflow is simple: you provide a prompt to create a scene, and then a second prompt to animate it.
 
