@@ -58,58 +58,29 @@ async def create_frame(
     prompt: the prompt to create or edit an image based on the user requests.
     is_image_edit: Set this to True if the user wants edit a previous generated image, False otherwise (create a brand new image)
     """
-    try:
-        model = "gemini-2.5-flash-image"
-        enhanced_prompt = f"photorealistic, cinematic, high quality, {prompt}"
-        print(f"[create_frame] called: is_image_edit={is_image_edit}, prompt='{prompt[:100]}'", flush=True)
+    enhanced_prompt = f"photorealistic, cinematic, high quality, {prompt}"
+    user_id = tool_context.session.user_id
 
-        user_id = tool_context.session.user_id
+    parts = [types.Part.from_text(text=enhanced_prompt)]
 
-        parts = [types.Part.from_text(text=enhanced_prompt)]
+    if is_image_edit:
+        prev_bytes = _load_from_gcs(user_id, "latest_frame.png")
+        if prev_bytes:
+            parts.insert(0, types.Part.from_bytes(data=prev_bytes, mime_type="image/png"))
 
-        if is_image_edit:
-            prev_bytes = _load_from_gcs(user_id, "latest_frame.png")
-            if prev_bytes:
-                parts.insert(0, types.Part.from_bytes(data=prev_bytes, mime_type="image/png"))
+    response = client.models.generate_content(
+        model="gemini-2.5-flash-image",
+        contents=[types.Content(role="user", parts=parts)],
+        config=types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"]),
+    )
 
-        contents = [types.Content(role="user", parts=parts)]
+    for part in response.candidates[0].content.parts:
+        if part.inline_data and part.inline_data.data:
+            _save_to_gcs(user_id, "latest_frame.png", part.inline_data.data, "image/png")
+            await tool_context.save_artifact("created_frame.png", part)
+            return {"status": "success", "message": "Image created successfully."}
 
-        generate_content_config = types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-        )
-
-        for chunk in client.models.generate_content_stream(
-            model=model,
-            contents=contents,
-            config=generate_content_config,
-        ):
-            if not (
-                chunk.candidates
-                and chunk.candidates[0].content
-                and chunk.candidates[0].content.parts
-            ):
-                continue
-
-            part = chunk.candidates[0].content.parts[0]
-
-            if part.inline_data and part.inline_data.data:
-                img_data = part.inline_data.data
-                _save_to_gcs(user_id, "latest_frame.png", img_data, "image/png")
-
-                # Also save as artifact for UI display
-                await tool_context.save_artifact("created_frame.png", part)
-
-                return {"status": "success", "message": "Image created successfully."}
-
-            if chunk.text:
-                print(f"[create_frame] Text chunk: {chunk.text}", flush=True)
-
-        print("[create_frame] FAILED - no image data in response", flush=True)
-        return {"status": "error", "message": "Image generation failed."}
-    except Exception as e:
-        import traceback
-        print(f"[create_frame] EXCEPTION: {traceback.format_exc()}", flush=True)
-        return {"status": "error", "message": f"Image generation error: {str(e)}"}
+    return {"status": "error", "message": "Image generation failed."}
 
 
 async def animate_frame(prompt: str, tool_context: ToolContext) -> dict:
@@ -118,28 +89,14 @@ async def animate_frame(prompt: str, tool_context: ToolContext) -> dict:
     Args:
     prompt: the prompt to generate the video tailored on the user request
     """
-
-    video_model = "veo-3.1-generate-preview"
-    video_model_fast = "veo-3.1-fast-generate-preview"
-
-    is_fast_veo = True
-    if is_fast_veo:
-        video_model = video_model_fast
-
     user_id = tool_context.session.user_id
-
-    # Load image directly from GCS
-    print(f"[animate_frame] Loading image from GCS (user={user_id})", flush=True)
     img_bytes = _load_from_gcs(user_id, "latest_frame.png")
 
     if not img_bytes:
-        print("[animate_frame] FAILED - no image in GCS", flush=True)
         return {"status": "error", "message": "Could not find any generated image. Please create an image first."}
 
-    print(f"[animate_frame] Image loaded ({len(img_bytes)} bytes), generating video...", flush=True)
-
     operation = await client.aio.models.generate_videos(
-        model=video_model,
+        model="veo-3.1-fast-generate-preview",
         prompt=prompt,
         image=Image(image_bytes=img_bytes, mime_type="image/png"),
         config=types.GenerateVideosConfig(
@@ -161,21 +118,11 @@ async def animate_frame(prompt: str, tool_context: ToolContext) -> dict:
         if not video_bytes:
             return {"status": "error", "message": "Video generation returned empty video data."}
 
-        # Save to GCS
         _save_to_gcs(user_id, "animation.mp4", video_bytes, "video/mp4")
-
-        # Also save as artifact for UI display
-        artifact_part = types.Part(
-            inline_data=types.Blob(
-                mime_type="video/mp4",
-                data=video_bytes,
-            )
-        )
         await tool_context.save_artifact(
             filename="animation.mp4",
-            artifact=artifact_part,
+            artifact=types.Part(inline_data=types.Blob(mime_type="video/mp4", data=video_bytes)),
         )
-
         return {"status": "success", "message": "Video generated successfully."}
 
     error_msg = "Video animation failed."
