@@ -18,6 +18,10 @@ Images and videos are persisted via GCS (keyed by user ID) so they survive acros
 
 ## Demo
 
+### Deployed on Gemini Enterprise
+
+![Mova agent on Gemini Enterprise](image.png)
+
 ### Example
 
 **User:** "Create a frame of a futuristic car flying through a neon-lit city at night."
